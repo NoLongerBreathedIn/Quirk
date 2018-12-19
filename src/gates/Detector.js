@@ -96,10 +96,11 @@ let detectorShader = makePseudoShaderWithInputsAndOutputAndCode(
     `
         uniform float rnd;
     
-        vec2 outputFor(float k) {
-            float detectChance = read_detection_weight(0.0) / read_total_weight(0.0);
-            float detection_type = float(rnd < detectChance);
-            float own_type = read_classification(k);
+        vec2 outputFor(int k) {
+            float detectChance = read_detection_weight(0) /
+                                read_total_weight(0);
+            bool detection_type = rnd < detectChance;
+            bool own_type = read_classification(k);
             return read_ket(k) * float(detection_type == own_type);
         }
     `);

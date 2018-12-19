@@ -122,10 +122,10 @@ function boolInputPartGetter(name) {
         uniform sampler2D ${pre}_tex;
         uniform vec2 ${pre}_size;
 
-        float read_${name}(float k) {
+        bool read_${name}(float k) {
             vec2 uv = vec2(mod(k, ${pre}_size.x) + 0.5,
                            floor(k / ${pre}_size.x) + 0.5) / ${pre}_size;
-            return float(texture2D(${pre}_tex, uv).x == 1.0);
+            return bool(texture2D(${pre}_tex, uv).x);
         }
 
         float len_${name}() {

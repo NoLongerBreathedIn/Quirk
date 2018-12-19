@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import {Config} from "src/Config.js"
 import {DetailedError} from "src/base/DetailedError.js"
 import {ketArgs, ketShader} from "src/circuit/KetShaderUtil.js"
 import {Matrix} from "src/math/Matrix.js"
@@ -60,8 +61,8 @@ const hugeQubitOperationMaker = qubitCount => ketShader(
     `
         vec2 t = vec2(0.0, 0.0);
         for (int k = 0; k < ${1<<qubitCount}; k++) {
-            t += cmul(inp(float(k)),
-                      read_coefs(out_id * ${1<<qubitCount}.0 + float(k)));
+            t += cmul(inp(k),
+                      read_coefs(out_id * ${1<<qubitCount}.0 + k));
         }
         return t;
     `,
@@ -72,15 +73,18 @@ const multiQubitOperationMaker = qubitCount => ketShader(
     `
         int row = int(out_id);
         vec2 t = vec2(0.0, 0.0);
-        for (int d = 0; d < ${1<<qubitCount}; d++) {
+        ${Config.WGL2? '' :
+        `for (int d = 0; d < ${1<<qubitCount}; d++) {
             // Can't index by row, since it's not a constant, so we do a const brute force loop searching for it.
-            if (d == row) {
+	    // At least not without WebGL 2!
+            if (d == row) {`}
                 for (int k = 0; k < ${1<<(qubitCount-1)}; k++) {
-                    vec4 u = coefs[d*${1<<(qubitCount-1)} + k];
-                    t += cmul(inp(float(k*2)), u.xy);
-                    t += cmul(inp(float(k*2+1)), u.zw);
-                }
-            }
+                    vec4 u = coefs[${Config.WGL2? 
+                                     `row << ${qubitCount} - 1 | k` :
+                                     `d * ${1<<(qubitCount-1)} + k`}];
+                    t += cmul(inp(k*2), u.xy);
+                    t += cmul(inp(k*2+1), u.zw);
+        ${Config.WGL2? '' : `}}`}
         }
         return t;
     `,
@@ -133,53 +137,34 @@ GateShaders.applyMatrixOperation = (ctx, matrix) => {
 
     throw new DetailedError("Matrix is past 4 qubits. Too expensive.", {ctx, matrix});
 };
-
+	
 /**
  * @param {!WglTexture} inputTexture
  * @param {!int} shiftAmount
  * @returns {!WglConfiguredShader}
  */
-GateShaders.cycleAllBits = (inputTexture, shiftAmount) => {
+GateShaders.cycleAllBits = (inputTexture, shiftAmount, span) => {
     let size = currentShaderCoder().vec2.arrayPowerSizeOfTexture(inputTexture);
+    let sa = Util.properMod(-shiftAmount, size);
     return CYCLE_ALL_SHADER_VEC2(
         inputTexture,
-        WglArg.float("shiftAmount", 1 << Util.properMod(-shiftAmount, size)));
+        WglArg.int("shiftAmount", Config.WGL2? sa : 1 << sa),
+        WglArg.int("span", Config.WGL2? span : 1 << span));
 };
 const CYCLE_ALL_SHADER_VEC2 = makePseudoShaderWithInputsAndOutputAndCode(
     [Inputs.vec2('input')],
     Outputs.vec2(),
     `
-    uniform float shiftAmount;
+    uniform int shiftAmount;
+    uniform int span;
 
-    vec2 outputFor(float k) {
-        float span = len_input();
-        float shiftedState = k * shiftAmount;
-        float cycledState = mod(shiftedState, span) + floor(shiftedState / span);
-        return read_input(cycledState);
-    }`);
-
-/**
- * @param {!WglTexture} inputTexture
- * @param {!int} shiftAmount
- * @returns {!WglConfiguredShader}
- */
-GateShaders.cycleAllBitsFloat = (inputTexture, shiftAmount) => {
-    let size = currentShaderCoder().vec2.arrayPowerSizeOfTexture(inputTexture);
-    return CYCLE_ALL_SHADER_FLOAT(
-        inputTexture,
-        WglArg.float("shiftAmount", 1 << Util.properMod(-shiftAmount, size)));
-};
-const CYCLE_ALL_SHADER_FLOAT = makePseudoShaderWithInputsAndOutputAndCode(
-    [Inputs.float('input')],
-    Outputs.float(),
-    `
-    uniform float shiftAmount;
-
-    float outputFor(float k) {
-        float span = len_input();
-        float shiftedState = k * shiftAmount;
-        float cycledState = mod(shiftedState, span) + floor(shiftedState / span);
-        return read_input(cycledState);
+    vec2 outputFor(int k) {
+        ${Config.WGL2?
+        `return read_input((k << shiftAmount | k >> span - shiftAmount)
+			   & (1 << span) - 1)` :
+        `int shiftedState = k * shiftAmount;
+        int cycledState = modi(shiftedState, span) + shiftedState / span;
+        return read_input(cycledState)`};
     }`);
 
 export {GateShaders}

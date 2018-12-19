@@ -33,10 +33,14 @@ let CycleBitsGates = {};
 let cycleBitsShader = (ctx, qubitSpan, shiftAmount) =>
     CYCLE_SHADER.withArgs(
         ...ketArgs(ctx, qubitSpan),
-        WglArg.float("amount", 1 << Util.properMod(-shiftAmount, qubitSpan)));
+        WglArg.int("amount", Config.WGL2? Util.properMod(-shiftAmount, qubitSpan) : 1 << Util.properMod(-shiftAmount, qubitSpan)));
 const CYCLE_SHADER = ketShaderPermute(
-    'uniform float amount;',
-    'out_id *= amount; return mod(out_id, span) + floor(out_id / span);');
+    'uniform int amount;',
+    `${Config.WGL2?
+    `return read_input((out_id << amount | out_id >> span - amount)
+			& (1 << span) - 1)` :
+    `int shiftedState = out_id * amount;
+    return modi(shiftedState, span) + shiftedState / span`};`);
 
 const makeCycleBitsPermutation = (shift, span) => e => {
     shift = Util.properMod(shift, span);

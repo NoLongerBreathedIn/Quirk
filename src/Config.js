@@ -92,6 +92,9 @@ Config.DEFAULT_STROKE_THICKNESS = 1;
 Config.CHECK_WEB_GL_ERRORS_EVEN_ON_HOT_PATHS = false;
 Config.SEMI_STABLE_RANDOM_VALUE_LIFETIME_MILLIS = 300;
 
+// Autodetect WebGL 2.
+Config.WGL2 = window.location.search.indexOf('v = 2') > 0;
+
 Config.IGNORED_WEBGL_INFO_TERMS = [];
 
 export {Config}

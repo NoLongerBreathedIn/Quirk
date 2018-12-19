@@ -211,7 +211,7 @@ KetTextureUtil.pixelsToQubitDensityMatrices = buffer => {
 const amplitudesToProbabilities = makePseudoShaderWithInputsAndOutputAndCode(
     [Inputs.vec2('input')],
     Outputs.float(),
-    `float outputFor(float k) {
+    `float outputFor(int k) {
         vec2 amp = read_input(k);
         return dot(amp, amp);
     }`);

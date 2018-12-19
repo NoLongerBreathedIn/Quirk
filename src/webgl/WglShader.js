@@ -128,19 +128,23 @@ class WglCompiledShader {
     constructor(fragmentShaderSource, uniformParameterNames) {
         let ctx = initializedWglContext();
         let precision = ctx.maximumShaderFloatPrecision;
-        let vertexShader = `
+        let vertexShader = `${Config.WGL2? '#version 300 es' : ''}
             precision ${precision} float;
             precision ${precision} int;
             attribute vec2 position;
             void main() {
               gl_Position = vec4(position, 0, 1);
             }`;
-        let fullFragmentShader = `
+        let fullFragmentShader = `${Config.WGL2? '#version 300 es' : 
             precision ${precision} float;
             precision ${precision} int;
+            ${Config.WGL2? '' :
+            'int modi(int a, int b) {\n' +
+                'return int(float(a)/float(b));\n' +
+            '}'}
             ${fragmentShaderSource}`;
 
-        const GL = WebGLRenderingContext;
+        const GL = Config.WGL2? WebGL2RenderingContext : WebGLRenderingContext;
         let gl = ctx.gl;
         let glVertexShader = WglCompiledShader.compileShader(gl, GL.VERTEX_SHADER, vertexShader);
         let glFragmentShader = WglCompiledShader.compileShader(gl, GL.FRAGMENT_SHADER, fullFragmentShader);

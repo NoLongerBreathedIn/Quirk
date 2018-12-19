@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import {Config} from "src/Config.js"
 import {Gate, GateBuilder} from "src/circuit/Gate.js"
 import {GatePainting} from "src/draw/GatePainting.js"
 import {Matrix} from "src/math/Matrix.js"
@@ -69,7 +70,7 @@ function NOT_DRAWER(args) {
     }
 }
 
-let xShader = ketShaderPermute('', 'return 1.0-out_id;', 1);
+let xShader = ketShaderPermute('', `return 1${Config.WGL2?'^':'-'}out_id;`, 1);
 /** @type {!Gate} */
 HalfTurnGates.X = new GateBuilder().
     setSerializedIdAndSymbol("X").
@@ -80,7 +81,10 @@ HalfTurnGates.X = new GateBuilder().
     setKnownEffectToMatrix(Matrix.PAULI_X).
     gate;
 
-let yShader = ketShader('', 'vec2 v = inp(1.0-out_id); return (out_id*2.0 - 1.0)*vec2(-v.y, v.x);', 1);
+let yShader = ketShader('', `
+    vec2 v = inp(1${Config.WGL2?'^':'-'}out_id);
+    return float(${Config.WGL2?'1|-out_id':'1-out_id*2'})*vec2(v.y, -v.x);`,
+			1);
 /** @type {!Gate} */
 HalfTurnGates.Y = new GateBuilder().
     setSerializedIdAndSymbol("Y").
@@ -90,7 +94,8 @@ HalfTurnGates.Y = new GateBuilder().
     setKnownEffectToMatrix(Matrix.PAULI_Y).
     gate;
 
-let zShader = ketShader('', 'return amp*(1.0 - out_id*2.0);', 1);
+let zShader =
+    ketShader('', `return float(${Config.WGL2?'1|-out_id':'1-out_id*2'};`, 1);
 /** @type {!Gate} */
 HalfTurnGates.Z = new GateBuilder().
     setSerializedIdAndSymbol("Z").
@@ -100,7 +105,10 @@ HalfTurnGates.Z = new GateBuilder().
     setKnownEffectToMatrix(Matrix.PAULI_Z).
     gate;
 
-let hShader = ketShader('', 'return 0.7071067811865476*(amp*(1.0-2.0*out_id) + inp(1.0-out_id));', 1);
+let hShader =
+    ketShader('', `return 0.7071067811865476 *
+                   (amp*float(${Config.WGL2?'1|-out_id':'1-out_id*2'} + 
+                       inp(1${Config.WGL2?'^':'-'}out_id));`, 1);
 /** @type {!Gate} */
 HalfTurnGates.H = new GateBuilder().
     setSerializedIdAndSymbol("H").

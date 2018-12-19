@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import {Config} from "src/Config.js"
 import {CircuitShaders} from "src/circuit/CircuitShaders.js"
 import {Gate, GateBuilder} from "src/circuit/Gate.js"
 import {GatePainting} from "src/draw/GatePainting.js"
@@ -50,7 +51,7 @@ function densityDisplayStatTexture(inp, qubitCount, controls, rangeOffset, range
     trader.shadeAndTrade(
             ket => CircuitShaders.controlSelect(controls, ket),
         WglTexturePool.takeVec2Tex(startingQubits - lostQubits));
-    trader.shadeAndTrade(ket => GateShaders.cycleAllBits(ket, lostHeadQubits-rangeOffset));
+    trader.shadeAndTrade(ket => GateShaders.cycleAllBits(ket, lostHeadQubits-rangeOffset, startingQubits - lostQubits));
 
     // Expand amplitudes into couplings.
     let n = qubitCount - lostQubits + rangeLength;
@@ -75,18 +76,21 @@ function densityDisplayStatTexture(inp, qubitCount, controls, rangeOffset, range
  */
 let amplitudesToCouplings = (inputTexture, qubitSpan) => AMPLITUDES_TO_DENSITIES_SHADER(
     inputTexture,
-    WglArg.float('qubitSpan', 1 << qubitSpan));
+    WglArg.int('qubitSpan', Config.WGL2? qubitSpan : 1 << qubitSpan));
 const AMPLITUDES_TO_DENSITIES_SHADER = makePseudoShaderWithInputsAndOutputAndCode(
     [Inputs.vec2('input')],
     Outputs.vec2(),
     `
-    uniform float qubitSpan;
+    uniform int qubitSpan;
 
-    vec2 outputFor(float k) {
-        float k_ket = mod(k, qubitSpan);
-        float k_bra = mod(floor(k / qubitSpan), qubitSpan);
-        float k_rest = floor(k / qubitSpan / qubitSpan);
-        float offset = k_rest*qubitSpan;
+    vec2 outputFor(int k) {
+        int k_ket = ${Config.WGL2? 'k & (1 << qubitSpan) - 1' :
+                                   'modi(k, qubitSpan)'};
+        int k_bra = ${Config.WGL2? 'k >> qubitSpan & (1 << qubitSpan) - 1' : 
+                                   'modi(k / qubitSpan, qubitSpan)'};
+        int k_rest = ${Config.WGL2? 'k >> 2 * qubitSpan' : 
+                                      'k / qubitSpan / qubitSpan'};
+        int offset = k_rest ${Config.WGL2? '<<' : '*'} qubitSpan;
 
         vec2 ampKet = read_input(k_ket + offset);
         vec2 ampBra = read_input(k_bra + offset);

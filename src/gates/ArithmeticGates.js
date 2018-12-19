@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import {Config} from "src/Config.js"
 import {Gate} from "src/circuit/Gate.js"
 import {GatePainting} from "src/draw/GatePainting.js"
 import {ketArgs, ketShaderPermute, ketInputGateShaderCode} from "src/circuit/KetShaderUtil.js"
@@ -31,14 +32,15 @@ const chunkedScaledAdditionPermutationMaker = (span, factor) => e => {
 
 const ADDITION_SHADER = ketShaderPermute(
     `
-        uniform float factor;
+        uniform int factor;
         ${ketInputGateShaderCode('A')}
     `,
     `
-        float d = read_input_A();
+        int d = read_input_A();
         d *= factor;
-        d = mod(d, span);
-        return mod(out_id + span - d, span);`);
+        ${Config.WGL2? 'd &= (1 << span) - 1' : 'd = modi(d, span)'};
+        return ${Config.WGL2? 'out_id - d & (1 << span) - 1' :
+                  'modi(out_id + span - d, span)'};`);
 
 ArithmeticGates.Legacy_AdditionFamily = Gate.buildFamily(2, 16, (span, builder) => builder.
     setSerializedId("add" + span).
@@ -72,7 +74,7 @@ ArithmeticGates.PlusAFamily = Gate.buildFamily(1, 16, (span, builder) => builder
     setRequiredContextKeys("Input Range A").
     setActualEffectToShaderProvider(ctx => ADDITION_SHADER.withArgs(
         ...ketArgs(ctx, span, ['A']),
-        WglArg.float("factor", +1))).
+        WglArg.int("factor", +1))).
     setKnownEffectToParametrizedPermutation((v, a) => (v + a) & ((1 << span) - 1)));
 
 ArithmeticGates.MinusAFamily = Gate.buildFamily(1, 16, (span, builder) => builder.
@@ -83,7 +85,7 @@ ArithmeticGates.MinusAFamily = Gate.buildFamily(1, 16, (span, builder) => builde
     setRequiredContextKeys("Input Range A").
     setActualEffectToShaderProvider(ctx => ADDITION_SHADER.withArgs(
         ...ketArgs(ctx, span, ['A']),
-        WglArg.float("factor", -1))).
+        WglArg.int("factor", -1))).
     setKnownEffectToParametrizedPermutation((v, a) => (v - a) & ((1 << span) - 1)));
 
 ArithmeticGates.all = [

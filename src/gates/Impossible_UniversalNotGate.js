@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import {Config} from "src/Config.js"
 import {GateBuilder} from "src/circuit/Gate.js"
 import {ketArgs, ketShader} from "src/circuit/KetShaderUtil.js"
 import {WglConfiguredShader} from "src/webgl/WglConfiguredShader.js"
@@ -23,7 +24,9 @@ import {WglConfiguredShader} from "src/webgl/WglConfiguredShader.js"
 let universalNot = ctx => UNIVERSAL_NOT_SHADER.withArgs(...ketArgs(ctx));
 const UNIVERSAL_NOT_SHADER = ketShader(
     '',
-    'vec2 other = inp(1.0 - out_id); return vec2(other.x, -other.y) * (1.0 - 2.0 * out_id);',
+    `vec2 other = inp(1${Config.WGL2?'^':'-'}out_id);
+    return vec2(other.x, -other.y) *
+            float(${Config.WGL2?'1|-out_id':'1-out_id*2'};`,
     1);
 
 let UniversalNotGate = new GateBuilder().

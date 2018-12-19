@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import {Config} from "src/Config.js"
 import {Complex} from "src/math/Complex.js"
 import {Gate} from "src/circuit/Gate.js"
 import {ketArgs, ketShaderPhase} from "src/circuit/KetShaderUtil.js"
@@ -33,9 +34,11 @@ function applyControlledPhaseGradient(ctx, qubitSpan, factor=1) {
 const CONTROLLED_PHASE_GRADIENT_SHADER = ketShaderPhase(
     'uniform float factor;',
     `
-        float hold = floor(out_id * 2.0 / span);
-        float step = mod(out_id, span / 2.0);
-        return hold * step * factor * 6.2831853071795864769 / span;
+        int hold = out_id ${Config.WGL2? '>> span - 1' : '* 2 / span'};
+        int step = ${Config.WGL2? 'out_id & (1 << span - 1) - 1' :
+                                  'modi(out_id, span / 2.0)'};
+        return float(hold) * float(step) * factor * 6.2831853071795864769 /
+        float(${Config.WGL2? '1 << ' : ''}span);
     `);
 
 const FOURIER_TRANSFORM_MATRIX_MAKER = span =>

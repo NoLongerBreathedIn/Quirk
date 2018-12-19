@@ -129,7 +129,7 @@ CountingGates.CountingFamily = Gate.buildFamily(1, 16, (span, builder) => builde
     setDrawer(STAIRCASE_DRAWER(0, 1 << span)).
     setActualEffectToShaderProvider(ctx => offsetShader.withArgs(
         ...ketArgs(ctx, span),
-        WglArg.float("amount", Math.floor(ctx.time*(1<<span))))).
+        WglArg.int("amount", Math.floor(ctx.time*(1<<span))))).
     setKnownEffectToTimeVaryingPermutation((t, i) => offsetPermutation(t, +1, span, i)));
 
 CountingGates.UncountingFamily = Gate.buildFamily(1, 16, (span, builder) => builder.
@@ -140,7 +140,7 @@ CountingGates.UncountingFamily = Gate.buildFamily(1, 16, (span, builder) => buil
     setDrawer(STAIRCASE_DRAWER(0, 1 << span, true)).
     setActualEffectToShaderProvider(ctx => offsetShader.withArgs(
         ...ketArgs(ctx, span),
-        WglArg.float("amount", -Math.floor(ctx.time*(1<<span))))).
+        WglArg.int("amount", -Math.floor(ctx.time*(1<<span))))).
     setKnownEffectToTimeVaryingPermutation((t, i) => offsetPermutation(t, -1, span, i)));
 
 CountingGates.RightShiftRotatingFamily = Gate.buildFamily(2, 16, (span, builder) => builder.

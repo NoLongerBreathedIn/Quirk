@@ -52,7 +52,7 @@ function amplitudeDisplayStatTextures(stateKet, controls, rangeOffset, rangeLeng
     trader.shadeAndTrade(
         tex => CircuitShaders.controlSelect(controls, tex),
         WglTexturePool.takeVec2Tex(involvedQubits));
-    trader.shadeAndTrade(tex => GateShaders.cycleAllBits(tex, lostHeadQubits-rangeOffset));
+    trader.shadeAndTrade(tex => GateShaders.cycleAllBits(tex, lostHeadQubits-rangeOffset, involvedQubits));
     let ketJustAfterCycle = trader.dontDeallocCurrentTexture();
 
     // Look over all superposed values of the target qubits and pick the one with the most amplitude.
@@ -155,7 +155,7 @@ function amplitudesToPolarKets(input) {
 const AMPLITUDES_TO_POLAR_KETS_SHADER = makePseudoShaderWithInputsAndOutputAndCode(
     [Inputs.vec2('input')],
     Outputs.vec4(),
-    `vec4 outputFor(float k) {
+    `vec4 outputFor(int k) {
         vec2 ri = read_input(k);
         float mag = dot(ri, ri);
         float phase = mag == 0.0 ? 0.0 : atan(ri.y, ri.x);
@@ -172,22 +172,23 @@ function spreadLengthAcrossPolarKets(textureTrader, includedQubitCount) {
     for (let bit = 0; bit < includedQubitCount; bit++) {
         textureTrader.shadeAndTrade(inp => SPREAD_LENGTH_ACROSS_POLAR_KETS_SHADER(
             inp,
-            WglArg.float('bit', 1 << bit)));
+            WglArg.int('bit', Config.WGL2? bit : 1 << bit)));
     }
 }
 const SPREAD_LENGTH_ACROSS_POLAR_KETS_SHADER = makePseudoShaderWithInputsAndOutputAndCode(
     [Inputs.vec4('input')],
     Outputs.vec4(),
     `
-    uniform float bit;
+    uniform int bit;
 
-    float xorBit(float v) {
-        float b = floor(mod(floor(v/bit) + 0.5, 2.0));
-        float d = 1.0 - 2.0*b;
-        return v + bit*d;
+    float xorBit(int v) {
+        ${Config.WGL2? 'return v ^ 1 << bit' : 
+        `int b = modi((v + 1) / bit, 2);
+        int d = 1 - 2*b;
+        return v + bit*d`};
     }
 
-    vec4 outputFor(float k) {
+    vec4 outputFor(int k) {
         float partner = xorBit(k);
         vec4 v = read_input(k);
         vec4 p = read_input(partner);
@@ -207,16 +208,16 @@ function reduceToLongestPolarKet(textureTrader, includedQubitCount) {
         textureTrader.shadeHalveAndTrade(
             inp => FOLD_REPRESENTATIVE_POLAR_KET_SHADER(
                 inp,
-                WglArg.float('offset', 1 << curQubitCount)));
+                WglArg.int('offset', 1 << curQubitCount)));
     }
 }
 const FOLD_REPRESENTATIVE_POLAR_KET_SHADER = makePseudoShaderWithInputsAndOutputAndCode(
     [Inputs.vec4('input')],
     Outputs.vec4(),
     `
-    uniform float offset;
+    uniform int offset;
 
-    vec4 outputFor(float k) {
+    vec4 outputFor(int k) {
         vec4 p = read_input(k);
         vec4 q = read_input(k + offset);
         return vec4(
@@ -238,7 +239,7 @@ const CONVERT_AWAY_FROM_POLAR_SHADER = makePseudoShaderWithInputsAndOutputAndCod
     [Inputs.vec4('input')],
     Outputs.vec4(),
     `
-    vec4 outputFor(float k) {
+    vec4 outputFor(int k) {
         vec4 polar = read_input(k);
         float mag = sqrt(polar.x);
         return vec4(mag * cos(polar.y), mag * sin(polar.y), polar.z, 0.0);
@@ -256,7 +257,7 @@ const TO_RATIOS_VS_REPRESENTATIVE_SHADER = makePseudoShaderWithInputsAndOutputAn
         Inputs.vec4('rep')
     ],
     Outputs.vec4(),
-    `vec4 outputFor(float k) {
+    `vec4 outputFor(int k) {
         return vec4(read_ket(k), read_rep(floor(mod(k + 0.5, len_rep()))).xy);
     }`);
 
@@ -274,14 +275,15 @@ function foldConsistentRatios(textureTrader, includedQubitCount) {
         textureTrader.shadeHalveAndTrade(
             inp => FOLD_CONSISTENT_RATIOS_SHADER(
                 inp,
-                WglArg.float('bit', 1 << remainingIncludedQubitCount)));
+                WglArg.int('bit', Config.WGL2? remainingIncludedQubitCount :
+			   1 << remainingIncludedQubitCount)));
     }
 }
 const FOLD_CONSISTENT_RATIOS_SHADER = makePseudoShaderWithInputsAndOutputAndCode(
     [Inputs.vec4('input')],
     Outputs.vec4(),
     `
-    uniform float bit;
+    uniform int bit;
 
     vec2 mul(vec2 c1, vec2 c2) {
         return vec2(c1.x*c2.x - c1.y*c2.y, c1.x*c2.y + c1.y*c2.x);
@@ -300,9 +302,11 @@ const FOLD_CONSISTENT_RATIOS_SHADER = makePseudoShaderWithInputsAndOutputAndCode
             : b;
     }
 
-    vec4 outputFor(float k) {
-        float s1 = mod(k, bit) + floor(k/bit)*2.0*bit;
-        float s2 = s1 + bit;
+    vec4 outputFor(int k) {
+        int s1 = ${Config.WGL2?
+             'k & (1 << bit) - 1 | (k & ~((1 << bit) - 1)) << 1' :
+             'modi(k, bit) + k/bit*2*bit'};
+        int s2 = s1 ${Config.WGL2? '| 1 <<' : '+'} bit;
         vec4 v1 = read_input(s1);
         vec4 v2 = read_input(s2);
 
@@ -322,7 +326,7 @@ function signallingSumAll(textureTrader) {
 const SIGNALLING_SUM_SHADER_VEC4 = makePseudoShaderWithInputsAndOutputAndCode(
     [Inputs.vec4('input')],
     Outputs.vec4(),
-    `vec4 outputFor(float k) {
+    `vec4 outputFor(int k) {
         vec4 a = read_input(k);
         vec4 b = read_input(k + len_output());
         return a.x == -666.0 || b.x == -666.0 ? vec4(-666.0, -666.0, -666.0, -666.0) : a + b;

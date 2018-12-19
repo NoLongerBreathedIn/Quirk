@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import {Config} from "src/Config.js"
 import {GateBuilder} from "src/circuit/Gate.js"
 import {ketArgs, ketShaderPermute, ketInputGateShaderCode} from "src/circuit/KetShaderUtil.js"
 import {WglConfiguredShader} from "src/webgl/WglConfiguredShader.js"
@@ -29,9 +30,10 @@ function customComparisonShader(compareCode) {
             ${ketInputGateShaderCode('B')}
         `,
         `
-            float lhs = read_input_A();
-            float rhs = read_input_B();
-            return mod(out_id + ((${compareCode}) ? 1.0 : 0.0), 2.0);`);
+            int lhs = read_input_A();
+            int rhs = read_input_B();
+            return ${Config.WGL2? `out_id ^ int(${compareCode})` :
+                    'modi(out_id + int(${compareCode}), 2)'};`);
 
     return ctx => shader.withArgs(...ketArgs(ctx, 1, ['A', 'B']));
 }

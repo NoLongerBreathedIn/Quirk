@@ -22,18 +22,20 @@ let BitCountGates = {};
 
 const POP_COUNT_SHADER = ketShaderPermute(
     `
-        uniform float factor;
+        uniform int factor;
         ${ketInputGateShaderCode('A')}
     `,
     `
         float d = read_input_A();
         float popcnt = 0.0;
         for (int i = 0; i < ${Config.MAX_WIRE_COUNT}; i++) {
-            popcnt += mod(d, 2.0);
-            d = floor(d / 2.0);
+            popcnt += ${Config.WGL2? 'd & 1' : 'modi(d, 2)'};
+            ${Config.WGL2? 'd >>= 1' : 'd /= 2'};
         }
-        float offset = mod(popcnt * factor, span);
-        return mod(out_id + span - offset, span);`);
+        int offset = ${Config.WGL2? 'popcnt * factor & (1 << span) - 1' :
+                       'modi(popcnt * factor, span)'};
+        return ${Config.WGL2? 'out_id - offset & (1 << span) - 1' :
+                              'modi(out_id + span - offset, span)'};`);
 
 BitCountGates.PlusBitCountAFamily = Gate.buildFamily(1, 16, (span, builder) => builder.
     setSerializedIdAndSymbol("+cntA" + span).
@@ -43,7 +45,7 @@ BitCountGates.PlusBitCountAFamily = Gate.buildFamily(1, 16, (span, builder) => b
     setRequiredContextKeys("Input Range A").
     setActualEffectToShaderProvider(ctx => POP_COUNT_SHADER.withArgs(
         ...ketArgs(ctx, span, ['A']),
-        WglArg.float("factor", +1))).
+        WglArg.int("factor", +1))).
     setKnownEffectToParametrizedPermutation((t, a) => (t + Util.numberOfSetBits(a)) & ((1 << span) - 1)));
 
 BitCountGates.MinusBitCountAFamily = Gate.buildFamily(1, 16, (span, builder) => builder.
@@ -54,7 +56,7 @@ BitCountGates.MinusBitCountAFamily = Gate.buildFamily(1, 16, (span, builder) => 
     setRequiredContextKeys("Input Range A").
     setActualEffectToShaderProvider(ctx => POP_COUNT_SHADER.withArgs(
         ...ketArgs(ctx, span, ['A']),
-        WglArg.float("factor", -1))).
+        WglArg.int("factor", -1))).
     setKnownEffectToParametrizedPermutation((t, a) => (t - Util.numberOfSetBits(a)) & ((1 << span) - 1)));
 
 BitCountGates.all = [

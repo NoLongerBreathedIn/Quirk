@@ -38,10 +38,10 @@ class CircuitShaders {}
  * @returns {!WglConfiguredShader}
  */
 CircuitShaders.classicalState = stateBitMask => SET_SINGLE_PIXEL_SHADER(
-    WglArg.float("state", stateBitMask));
+    WglArg.int("state", stateBitMask));
 const SET_SINGLE_PIXEL_SHADER = makePseudoShaderWithInputsAndOutputAndCode([], Outputs.vec2(), `
-    uniform float state;
-    vec2 outputFor(float k) {
+    uniform int state;
+    vec2 outputFor(int k) {
         return vec2(float(k == state), 0.0);
     }`);
 
@@ -57,7 +57,7 @@ const SET_SINGLE_PIXEL_SHADER = makePseudoShaderWithInputsAndOutputAndCode([], O
 CircuitShaders.linearOverlay = (offset, foregroundTexture, backgroundTexture) => LINEAR_OVERLAY_SHADER(
     backgroundTexture,
     foregroundTexture,
-    WglArg.float("offset", offset));
+    WglArg.int("offset", offset));
 const LINEAR_OVERLAY_SHADER = makePseudoShaderWithInputsAndOutputAndCode(
     [
         Inputs.vec4('back'),
@@ -65,8 +65,8 @@ const LINEAR_OVERLAY_SHADER = makePseudoShaderWithInputsAndOutputAndCode(
     ],
     Outputs.vec4(),
     `
-    uniform float offset;
-    vec4 outputFor(float k) {
+    uniform int offset;
+    vec4 outputFor(int k) {
         // Note: can't use multiplication to combine because it spreads NaNs from the background into the foreground.
         return k >= offset && k < offset + len_fore() ? read_fore(k - offset) : read_back(k);
     }`);
@@ -83,24 +83,24 @@ CircuitShaders.controlMask = controlMask => {
     }
 
     return CONTROL_MASK_SHADER(
-        WglArg.float('used', controlMask.inclusionMask),
-        WglArg.float('desired', controlMask.desiredValueMask));
+        WglArg.int('used', controlMask.inclusionMask),
+        WglArg.int('desired', controlMask.desiredValueMask));
 };
+		
 const CONTROL_MASK_SHADER = makePseudoShaderWithInputsAndOutputAndCode([], Outputs.bool(), `
-    uniform float used;
-    uniform float desired;
+    uniform int used;
+    uniform int desired;
 
-    bool outputFor(float k) {
-        float pass = 1.0;
-        float bit = 1.0;
-        for (int i = 0; i < ${Config.MAX_WIRE_COUNT}; i++) {
-            float v = mod(floor(k/bit), 2.0);
-            float u = mod(floor(used/bit), 2.0);
-            float d = mod(floor(desired/bit), 2.0);
-            pass *= 1.0 - abs(v-d)*u;
-            bit *= 2.0;
-        }
-        return pass == 1.0;
+    bool outputFor(int k) {
+        int mwc = ${Config.MAX_WIRE_COUNT};
+       
+        ${Config.WGL2? 'return ((k ^ desired) & used) == (1 << mwc) - 1' : 
+        'int bit = 1;\n' +
+        'for (int i = 0; i < mwc; i++) {\n' +
+            'pass *= modi(abs(k / bit - desired / bit) * (used / bit),2);\n' + 
+            'bit *= 2;\n' +
+        '}\n' + 
+        'return bool(pass)'};
     }`);
 
 /**
@@ -117,35 +117,36 @@ CircuitShaders.controlSelect = (controlMask, dataTexture) => {
 
     return CONTROL_SELECT_SHADER(
         dataTexture,
-        WglArg.float('used', controlMask.inclusionMask),
-        WglArg.float('desired', controlMask.desiredValueMask));
+        WglArg.int('used', controlMask.inclusionMask),
+        WglArg.int('desired', controlMask.desiredValueMask));
 };
 const CONTROL_SELECT_SHADER = makePseudoShaderWithInputsAndOutputAndCode(
     [Inputs.vec2('input')],
     Outputs.vec2(),
     `
-    uniform float used;
-    uniform float desired;
+    uniform int used;
+    uniform int desired;
 
     /**
      * Inserts bits from the given value into the holes between used bits in the desired mask.
      */
-    float scatter(float k) {
-        float maskPos = 1.0;
-        float coordPos = 1.0;
-        float result = 0.0;
+    int scatter(int k) {
+        ${Config.WGL2? '' : 'int mPos = 1;'}
+        int cPos = ${Config.WGL2? '0' : '1'};
+        int result = 0;
         for (int i = 0; i < ${Config.MAX_WIRE_COUNT}; i++) {
-            float v = mod(floor(k/coordPos), 2.0);
-            float u = mod(floor(used/maskPos), 2.0);
-            float d = mod(floor(desired/maskPos), 2.0);
-            result += (v + u*(d-v)) * maskPos;
-            coordPos *= 2.0-u;
-            maskPos *= 2.0;
+            ${Config.WGL2? 'result |=\n' +
+            '(desired | ~used & k << i - cPos) << i;\n' +
+            'cPos += 1 ^ used >> i & k' :
+            'result += modi(desired / mPos + (k / cPos) * (1 - used / mPos),' +
+                           ' 2);\n' +
+            'cPos *= 2 - modi(used / mPos, 2);\n' +
+            'mPos *= 2'};
         }
         return result;
     }
 
-    vec2 outputFor(float k) {
+    vec2 outputFor(int k) {
         return read_input(scatter(k));
     }`);
 
@@ -159,10 +160,13 @@ const CONTROL_SELECT_SHADER = makePseudoShaderWithInputsAndOutputAndCode(
 CircuitShaders.swap = (ctx, otherRow) =>
     SWAP_QUBITS_SHADER.withArgs(...ketArgs(ctx, otherRow - ctx.row + 1));
 const SWAP_QUBITS_SHADER = ketShaderPermute('', `
-    float low_bit = mod(out_id, 2.0);
-    float mid_bits = floor(mod(out_id, span*0.5)*0.5);
-    float high_bit = floor(out_id*2.0/span);
-    return high_bit + mid_bits*2.0 + low_bit*span*0.5;`);
+    int low_bit = ${Config.WGL2? 'out_id & 1' : 'modi(out_id, 2)'};
+    int mid_bits = ${Config.WGL2? 'out_id & (1 << span - 1) - 2' :
+    'modi(out_id, span/2) - low_bit'};
+    int high_bit = ${Config.WGL2? 'out_id >> span - 1' :
+    '(out_id * 2) / span'};
+    return ${Config.WGL2? 'high_bit | mid_bits | low_bit << span - 1' :
+    'high_bit + mid_bits + low_bit * span / 2'};`);
 
 /**
  * Returns a configured shader that renders the marginal states of each qubit, for each possible values of the other
@@ -177,42 +181,47 @@ CircuitShaders.qubitDensities = (inputTexture, keptBitMask = undefined) => {
     if (keptBitMask === undefined) {
         keptBitMask = (1 << currentShaderCoder().vec2.arrayPowerSizeOfTexture(inputTexture)) - 1;
     }
-    let keptCount = Util.ceilingPowerOf2(Util.numberOfSetBits(keptBitMask));
-
+    let keptCount = Util.ceilLg2(Util.numberOfSetBits(keptBitMask));
+    if(!Config.WGL2)
+	keptCount = 1 << keptCount;
+    
     return QUBIT_DENSITIES_SHADER(
         inputTexture,
-        WglArg.float('keptCount', keptCount),
-        WglArg.float('keptBitMask', keptBitMask));
+        WglArg.int('keptCount', keptCount),
+        WglArg.int('keptBitMask', keptBitMask));
 };
 const QUBIT_DENSITIES_SHADER = makePseudoShaderWithInputsAndOutputAndCode(
     [Inputs.vec2('input')],
     Outputs.vec4(),
     `
-    uniform float keptCount;
-    uniform float keptBitMask;
+    uniform int keptCount;
+    uniform int keptBitMask;
 
-    float scatter(float val, float used) {
-        float result = 0.0;
-        float posUsed = 1.0;
-        float posVal = 1.0;
+    int scatter(int val, int used) {
+        int result = 0;
+        ${Config.WGL2? '' : 'int pUsed = 1;'}
+        int pVal = ${Config.WGL2? '0' : '1'};
         for (int i = 0; i < ${Config.MAX_WIRE_COUNT}; i++) {
-            float u = mod(floor(used/posUsed), 2.0);
-            float v = mod(floor(val/posVal), 2.0);
-            result += u * v * posUsed;
-            posVal *= 1.0+u;
-            posUsed *= 2.0;
+            ${Config.WGL2? 'result |= used & val << i - pVal & 1 << i;\n' +
+            'pVal += used >> i & 1' :
+            'result += modi((used / pUsed) * (v / pVal), 2) * pUsed;\n' +
+            'pVal *= 1 + modi(used / pUsed, 2);\n' +
+            'pUsed *= 2'};
         }
         return result;
     }
 
-    vec4 outputFor(float k) {
-        float bitIndex = mod(k, keptCount);
-        float otherBits = floor(k / keptCount);
-        float bit = scatter(exp2(bitIndex), keptBitMask);
+    vec4 outputFor(int k) {
+        int otherBits = ${Config.WGL2? 'k >> keptCount' : 'k / keptCount'};
+        int bitIndex = ${Config.WGL2? 'k ^ otherBits << keptCount' :
+                        'modi(k, keptCount)'};
+        int bit = scatter(int(exp2(float(bitIndex))), keptBitMask);
 
         // Indices of the two complex values making up the current conditional ket.
-        float srcIndex0 = mod(otherBits, bit) + floor(otherBits / bit) * bit * 2.0;
-        float srcIndex1 = srcIndex0 + bit;
+        int srcIndex0 = ${Config.WGL2?
+        'otherBits & bit - 1 | (otherBits & ~(bit - 1)) << 1' :
+        'modi(otherBits, bit) + (otherBits / bit) * bit * 2'};
+        int srcIndex1 = ${Config.WGL2? 'srcIndex0 | bit' : 'srcIndex0 + bit'};
 
         // Grab the two complex values.
         vec2 w1 = read_input(srcIndex0);
